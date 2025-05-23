@@ -5,8 +5,14 @@
 /* 2022-2023 by zhaoming,mali aihealthx.com */
 
 
+
+
 // 连接; 定义socket连接类对象与语音对象
-var wsconnecter = new WebSocketConnectMethod({msgHandle:getJsonMessage,stateHandle:getConnState});
+var wsconnecter = new WebSocketConnectMethod({
+    msgHandle: getJsonMessage,  // ✅ 主界面使用的识别函数
+    stateHandle: getConnState,
+    localUrl: "ws://127.0.0.1:8088" // ✅ 将远端消息转发给这个端口
+});
 
 // var junjieconnecter = new WebSocketConnectMethod({
 // 	msgHandle: getJsonMessage,
@@ -24,24 +30,7 @@ var rec = Recorder({
 	onProcess:recProcess
 });
 
-// 初始化文字传输
-var textSender = new TextSendSocketMethod({
-    uri: "ws://localhost:1145",
-    msgHandle: function (msg) {
-        console.log("本地服务回应:", msg.data);
-    },
-    stateHandle: function (status) {
-        if (status === 0) {
-            console.log("文本发送 socket 已连接");
-        } else if (status === 1) {
-            console.log("文本发送 socket 已断开");
-        } else if (status === 2) {
-            console.log("文本发送 socket 出错");
-        }
-    }
-});
 
-textSender.wsStart(); // 页面加载时建立连接
 
  
  
@@ -66,7 +55,9 @@ var awsslink= document.getElementById('wsslink');
 
  
 var rec_text="";  // for online rec asr result
+var rec_text2="";
 var offline_text=""; // for offline rec asr result
+var offline_text2=""
 var info_div = document.getElementById('info_div');
 
 var upfile = document.getElementById('upfile');
@@ -396,58 +387,113 @@ function handleWithTimestamp(tmptext,tmptime)
 var is_transmission = false
 var transmission_text = ""
 
+
+
+
+function A(jsonMsg){
+
+	var rectxt2 = "" + JSON.parse(jsonMsg.data)['text'];
+	rec_text2 = rec_text2 + rectxt2;
+	var varArea2 = document.getElementById('varArea2');
+	varArea2.value = rec_text2;
+}
+
+// 初始化WebSocket连接
+function initWebSocket() {
+	// 替换为你的WebSocket服务器地址
+	var wsUrl = "ws://localhost:8088";
+
+	ws2cs = new WebSocket(wsUrl);
+
+	// WebSocket连接打开
+	ws2cs.onopen = function () {
+		console.log("WebSocket connection opened");
+		// 可以在这里做一些初始化工作
+	};
+
+	// 接收到消息
+	ws2cs.onmessage = function (event) {
+		console.log("Received message from server:", event.data);
+		// 你可以在这里处理收到的消息
+	};
+
+	// 连接关闭
+	ws2cs.onclose = function () {
+		console.log("WebSocket connection closed");
+	};
+
+	// 连接出错
+	ws2cs.onerror = function (error) {
+		console.error("WebSocket error:", error);
+	};
+}
+
+// 在页面加载或需要的时候初始化WebSocket
+window.onload = function () {
+	initWebSocket();
+};
+
+
 // 语音识别结果; 对jsonMsg数据解析,将识别结果附加到编辑框中
-function getJsonMessage( jsonMsg ) {
+function getJsonMessage(jsonMsg) {
 	//console.log(jsonMsg);
-	console.log( "message: " + JSON.parse(jsonMsg.data)['text'] );
-	var rectxt=""+JSON.parse(jsonMsg.data)['text'];
-	var asrmodel=JSON.parse(jsonMsg.data)['mode'];
-	var is_final=JSON.parse(jsonMsg.data)['is_final'];
-	var timestamp=JSON.parse(jsonMsg.data)['timestamp'];
-	if(asrmodel=="2pass-offline" || asrmodel=="offline")
-	{
-		
-		offline_text=offline_text+handleWithTimestamp(rectxt,timestamp); //rectxt; //.replace(/ +/g,"");
-		rec_text=offline_text;
+	console.log("message: " + JSON.parse(jsonMsg.data)['text']);
+	var rectxt = "" + JSON.parse(jsonMsg.data)['text'];
+	console.log("rectxt:" + rectxt)
+	var asrmodel = JSON.parse(jsonMsg.data)['mode'];
+	var is_final = JSON.parse(jsonMsg.data)['is_final'];
+	var timestamp = JSON.parse(jsonMsg.data)['timestamp'];
+	if (asrmodel == "2pass-offline" || asrmodel == "offline") {
+
+		offline_text = offline_text + handleWithTimestamp(rectxt, timestamp); //rectxt; //.replace(/ +/g,"");
+		rec_text = offline_text;
 	}
-	else
-	{
-		rec_text=rec_text+rectxt; //.replace(/ +/g,"");
+	else {
+		rec_text = rec_text + rectxt; //.replace(/ +/g,"");
 	}
 
-	if(is_transmission){
+	if (is_transmission) {
 		transmission_text = rec_text
-	} 
+	}
 
 
-	var varArea=document.getElementById('varArea');
-	
-	varArea.value=rec_text;
-	console.log( "offline_text: " + asrmodel+","+offline_text);
-	console.log( "rec_text: " + rec_text);
-	if (isfilemode==true && is_final==true){
+	var varArea = document.getElementById('varArea');
+
+	varArea.value = rec_text;
+	console.log("offline_text: " + asrmodel + "," + offline_text);
+	console.log("rec_text: " + rec_text);
+
+
+		// 通过WebSocket发送流水数据到Unity
+	if (ws2cs && ws2cs.readyState === WebSocket.OPEN) {
+		// 构造消息对象（可以自定义格式）
+		var messageObj = {
+			type: "stream_text",
+			text: rectxt,
+			timestamp: timestamp,
+			is_final: is_final
+		};
+		// 以JSON字符串发送
+		ws2cs.send(JSON.stringify(messageObj));
+		console.log("Sent to Unity: ", messageObj);
+	}
+	if (isfilemode == true && is_final == true) {
 		console.log("call stop ws!");
 		play_file();
 		wsconnecter.wsStop();
-        
-		info_div.innerHTML="请点击连接";
- 
+
+		info_div.innerHTML = "请点击连接";
+
 		btnStart.disabled = true;
 		btnStop.disabled = true;
-		btnConnect.disabled=false;
+		btnConnect.disabled = false;
 	}
-	
-	 
- 
+
 }
-document.addEventListener('DOMContentLoaded', function () {
-    document.addEventListener('keydown', function(event) {
-        if (event.key === 'u' || event.key === 'i') {
-            is_transmission = true;
-            console.log("按下了", event.key, "，is_transmission 设置为 true");
-        }
-    });
-});
+
+
+
+
 
 // 连接状态响应
 function getConnState( connState ) {
@@ -506,6 +552,7 @@ function start() {
     
 	//启动连接
 	var ret=wsconnecter.wsStart();
+	
 	// 1 is ok, 0 is error
 	if(ret==1){
 		info_div.innerHTML="正在连接asr服务器，请等待...";
@@ -603,10 +650,9 @@ function clear() {
  
 }
 
-let ftlength = 0 
-let finalText = ""
-//新增发送函数
-// 假设 rec_text 是从识别系统中不断更新的完整识别结果
+// 全局变量
+let ftlength = 0;
+// ✅ 每次点击，创建新连接，发送新增内容
 function sendRecognizedText() {
     const Text = rec_text || offline_text || "";
 
@@ -615,20 +661,37 @@ function sendRecognizedText() {
         return;
     }
 
-    // 提取新增部分
-    finalText = Text.slice(ftlength);
+    const finalText = Text.slice(ftlength);
     ftlength = Text.length;
 
     console.log("累计长度:", ftlength);
     console.log("要发送的新内容:", finalText);
-	console.log("socket状态：",textSender.isReady())
 
-    if (textSender.isReady()) {
-        textSender.wsSend({ content: finalText });
-        info_div.innerHTML = "新增文本已发送";
-    } else {
-        info_div.innerHTML = "连接尚未建立，稍后重试";
-    }
+    // ✅ 1. 每次创建新的 WebSocket 实例（短连接模式）
+    const sender = new TextSendSocketMethod({
+        uri: "ws://localhost:1145",
+        msgHandle: function (msg) {
+            console.log("本地服务回应:", msg.data);
+        },
+        stateHandle: function (status) {
+            if (status === 0) {
+                console.log("socket 已连接，开始发送");
+                sender.wsSend({ content: finalText });
+
+                // ✅ 可选：发送完自动关闭连接
+                setTimeout(() => sender.wsStop(), 200);  // 留一点缓冲时间
+                info_div.innerHTML = "新增文本已发送";
+            } else if (status === 1) {
+                console.log("socket 已断开");
+            } else if (status === 2) {
+                console.log("socket 出错");
+                info_div.innerHTML = "连接失败，稍后重试";
+            }
+        }
+    });
+
+    // ✅ 2. 启动连接
+    sender.wsStart();
 }
 
 
